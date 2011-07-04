@@ -16,26 +16,22 @@ module GradientPng
     write_bytes_to_file(filename, png_bytes)
   end
 
-  private
-
   def self.signature
     [137, 80, 78, 71, 13, 10, 26, 10]
   end
 
-  def self.byte_array_from_number(num, bytes)
-    (bytes - 1).downto(0).collect { |byte| 
-      ((num >> (byte * 8)) & 0xFF) 
-    } 
-  end 
+  def self.four_byte_array_from_number(num)
+    [num].pack('N').unpack('C4')
+  end
 
   def self.header(width, height)
     bytes = [
 
       # width, 4 bytes
-      byte_array_from_number(width, 4),
+      four_byte_array_from_number(width),
 
       # height, 4 bytes
-      byte_array_from_number(height, 4),
+      four_byte_array_from_number(height),
 
       # bit depth = 8, 1 byte
       8,
@@ -70,16 +66,16 @@ module GradientPng
   def self.chunk(type, bytes)
     [
       # length, 4 bytes
-      byte_array_from_number(bytes.length, 4),
+      four_byte_array_from_number(bytes.length),
 
       # chunk type, 4 bytes
-      byte_array_from_number(type.unpack('N*')[0], 4),
+      four_byte_array_from_number(type.unpack('N*')[0]),
 
       # chunk contents
       bytes,
       
       # crc check of type and contents
-      byte_array_from_number(bytes.any? ? Zlib.crc32(type + bytes.pack('C*')) : Zlib.crc32(type), 4)
+      four_byte_array_from_number(bytes.any? ? Zlib.crc32(type + bytes.pack('C*')) : Zlib.crc32(type))
 
     ].flatten
   end
@@ -96,6 +92,7 @@ module GradientPng
         file.print byte.chr
       end 
     end
+    filename
   end
 
   def self.gradient(start_color, stop_color, count)
@@ -109,6 +106,3 @@ module GradientPng
   end
 
 end
-
-GradientPng.vertical_gradient('vgradient.png', [230, 230, 230], [180, 180, 180], 150)
-GradientPng.horizontal_gradient('hgradient.png', [230, 230, 230], [180, 180, 180], 600)

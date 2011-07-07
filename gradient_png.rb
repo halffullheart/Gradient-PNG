@@ -4,80 +4,49 @@ module GradientPng
 
   def self.vertical_gradient(filename, start_color, stop_color, height)
     colors = gradient(start_color, stop_color, height)
-    image_data = interpolate(0, [height - 1, 255].min, height).map { |b| [0, b] } # filter 0 for each scanline
-    png_bytes = signature + header(1, height) + pallete(colors) + data(image_data) + last
-    write_bytes_to_file(filename, png_bytes)
+    image_data = interpolate(0, [height - 1, 255].min, height).map{|b| [0, b]}.flatten.pack('C*') # filter 0 for each scanline
+    png_str = signature << header(1, height) << pallete(colors) << data(image_data) << last
+    write_bytes_to_file(filename, png_str)
   end
 
   def self.horizontal_gradient(filename, start_color, stop_color, width)
     colors = gradient(start_color, stop_color, width)
-    image_data = [0] + interpolate(0, [width - 1, 255].min, width) # filter 0 for the one scanline
-    png_bytes = signature + header(width, 1) + pallete(colors) + data(image_data) + last
-    write_bytes_to_file(filename, png_bytes)
+    image_data = "\x00" << interpolate(0, [width - 1, 255].min, width).pack('C*') # filter 0 for the one scanline
+    png_str = signature + header(width, 1) + pallete(colors) + data(image_data) + last
+    write_bytes_to_file(filename, png_str)
   end
 
   def self.signature
-    [137, 80, 78, 71, 13, 10, 26, 10]
-  end
-
-  def self.four_byte_array_from_number(num)
-    [num].pack('N').unpack('C4')
+    "\211PNG\r\n\032\n"
   end
 
   def self.header(width, height)
-    bytes = [
-
-      # width, 4 bytes
-      four_byte_array_from_number(width),
-
-      # height, 4 bytes
-      four_byte_array_from_number(height),
-
-      # bit depth = 8, 1 byte
-      8,
-
-      # color type = 3 (pallete used, color used), 1 byte
-      3,  
-
-      # compression mode = 0 (deflate/inflate), 1 byte
-      0,
-
-      # filter mode = 0, 1 byte
-      0,
-
-      # interlace mode = 0, 1 byte
-      0
-    ]
-    chunk('IHDR', bytes.flatten)
+    # A-E are one byte each
+    # A: bit depth
+    # B: color type (3 = pallete used and color used)
+    # C: compression mode (0 = deflate/inflate)
+    # D: filter mode
+    # E: interlace mode (0 = not interlaced)
+    # four bytes for width and height                  [A, B, C, D, E]
+    bytes = [width].pack('N') << [height].pack('N') << [8, 3, 0, 0, 0].pack('C*')
+    chunk('IHDR', bytes)
   end
 
   def self.pallete(colors)
-    chunk('PLTE', colors.flatten)
+    chunk('PLTE', colors)
   end
 
-  def self.data(bytes)
-    chunk('IDAT', Zlib::Deflate.deflate(bytes.flatten.pack('C*')).unpack('C*'))
+  def self.data(content)
+    chunk('IDAT', Zlib::Deflate.deflate(content))
   end
 
   def self.last
-    chunk('IEND', [])
+    chunk('IEND', '')
   end
 
-  def self.chunk(type, bytes)
-    [
-      # length, 4 bytes
-      four_byte_array_from_number(bytes.length),
-
-      # chunk type, 4 bytes
-      four_byte_array_from_number(type.unpack('N*')[0]),
-
-      # chunk contents
-      bytes,
-      
-      # crc check of type and contents
-      four_byte_array_from_number(bytes.any? ? Zlib.crc32(type + bytes.pack('C*')) : Zlib.crc32(type))
-
-    ].flatten
+  def self.chunk(type, content)
+    # 4 byte length, 4 byte chunk type, X bytes chunk content, 4 byte CRC of type and content
+    [content.length].pack('N') << type << content << [Zlib.crc32(type << content)].pack('N')
   end
 
   def self.interpolate(start, stop, count)
@@ -86,11 +55,9 @@ module GradientPng
     end
   end
 
-  def self.write_bytes_to_file(filename, bytes)
+  def self.write_bytes_to_file(filename, string)
     File.open(filename, 'wb') do |file|
-      bytes.each do |byte|
-        file.print byte.chr
-      end 
+      file << string
     end
     filename
   end
@@ -100,9 +67,10 @@ module GradientPng
     r = interpolate(start_color[0], stop_color[0], count)
     g = interpolate(start_color[1], stop_color[1], count)
     b = interpolate(start_color[2], stop_color[2], count)
-    (0..count).to_a.map do |i|
+    colors = (0..count).to_a.map do |i|
       [r[i], g[i], b[i]]
     end
+    colors.flatten.pack('C*')
   end
 
 end
